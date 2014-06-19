@@ -92,6 +92,23 @@ void readArrays(int* &a, int* &b)
 	in.close();
 }
 
+void readMatrix(int** &a)
+{
+	int n;
+	int m;
+	ifstream in("input.txt");
+	in>>n;
+	in>>m;
+	a = new int*[n];
+	for (int i = 0; i < n; i++)
+	{
+		a[i] = new int[m];
+		for (int j = 0; j < m; j++)
+			in>>a[i][j];
+	}
+	in.close();
+}
+
 void printMatrix(int** &a, int n, int m)
 {
 	for (int i = 0; i < n; i++)
@@ -194,6 +211,45 @@ int* multiplyArrays(int* a, int n, int* b, int m)
 	return res;
 }
 
+int max(int a, int b)
+{
+	return a < b ? b : a;
+}
+
+int kadane(int* &a, int n)
+{
+	if (n == 0)
+		return 0;
+	int sum = 0;
+	int m = 0;
+	for (int i = 0; i < n; i++)
+	{
+		sum += a[i];
+		m = max(sum, m);
+		sum = max(sum, 0);
+	}
+	return m;
+}
+
+int kadane(int** &a, int n, int m)
+{
+	int maxSum = 0;
+	for (int i = 0; i < m; i++)
+	{
+		int* temp = new int[n];
+		for (int j = 0; j < n; j++)
+			temp[j] = 0;
+		for (int j = i; j < m; j++)
+		{
+			for (int k = 0; k < n; k++)
+                temp[k] += a[k][j];
+			int sum = kadane(temp, m);
+			maxSum = max(maxSum, sum);
+		}
+	}
+	return maxSum;
+}
+
 int main()
 {
 	/*for (int i = 0; i < 4; i++)
@@ -221,13 +277,9 @@ int main()
 		points.pop_back();
 		cout<<"(" + to_string(point.first) + "," + to_string(point.second) + ")"<<endl;
 	}*/
-	int* a;
-	int* b;
-	readArrays(a, b);
-	printArray(a, 5);
-	printArray(b, 6);
-	int* c = multiplyArrays(a, 5, b, 6);
-	printArray(c, 11);
+	int** a;
+	readMatrix(a);
+	cout<<kadane(a, 4, 3)<<endl;
 	system("pause");
 	return 0;
 }

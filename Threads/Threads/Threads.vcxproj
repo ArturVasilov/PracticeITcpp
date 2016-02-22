@@ -137,7 +137,12 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Arrays.h" />
+    <ClInclude Include="DoubleArrays.h" />
+    <ClInclude Include="ExecutionFailedException.h" />
+    <ClInclude Include="Merge.h" />
+    <ClInclude Include="MergeRunnable.h" />
+    <ClInclude Include="Polynoms.h" />
+    <ClInclude Include="PolynomsRunnable.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="ThreadPoolExecutor.h" />
@@ -146,8 +151,13 @@
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Arrays.cpp" />
     <ClCompile Include="AssemblyInfo.cpp" />
+    <ClCompile Include="DoubleArrays.cpp" />
+    <ClCompile Include="ExecutionFailedException.cpp" />
+    <ClCompile Include="Merge.cpp" />
+    <ClCompile Include="MergeRunnable.cpp" />
+    <ClCompile Include="Polynoms.cpp" />
+    <ClCompile Include="PolynomsRunnable.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

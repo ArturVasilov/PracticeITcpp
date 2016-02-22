@@ -1,32 +1,53 @@
 #pragma once
-#include "Arrays.h"
+#include "ExecutionFailedException.h"
 
-typedef struct ArrayTask {
-	Arrays *arrays;
-	int index;
+#include <windows.h>
+#include <tchar.h>
+#include <strsafe.h>
+#include "atlstr.h"
 
-	ArrayTask(Arrays *arrays, int index)
+#define STRLEN(x) (sizeof(x)/sizeof(TCHAR) - 1)
+
+using namespace std;
+
+class Runnable
+{
+protected:
+	void printThreadFinished(int index)
 	{
-		this->arrays = arrays;
-		this->index = index;
+		HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (hStdout == INVALID_HANDLE_VALUE)
+		{
+			throw ExecutionFailedException();
+		}
+
+		char preparedMessage[] = "Thread with index=%d finished\n";
+		char messageChar[30];
+		sprintf(messageChar, preparedMessage, index);
+
+		TCHAR message[30];
+		_tcscpy(message, CA2W(messageChar));
+
+		DWORD dwCount = 0;
+
+		WriteConsole(hStdout, &message, STRLEN(message), &dwCount, NULL);
 	}
 
-	ArrayTask()
-	{
-	}
-} ArrayTask, *PArrayTask;
+public:
+	virtual int run() throw(ExecutionFailedException) = 0;
+};
 
 class ThreadPoolExecutor
 {
 private:
 	int threadsCount;
-	DWORD *dwThreadIdArray;
+	int newThreadIndex;
 	HANDLE *hThreadArray;
 
 public:
 	ThreadPoolExecutor(int threadsCount);
 
-	void scheduleTask(PArrayTask task);
+	void scheduleTask(Runnable *runnable);
 
 	void waitForAll();
 

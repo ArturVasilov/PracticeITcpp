@@ -1,43 +1,48 @@
 #include "stdafx.h"
 #include "ThreadPoolExecutor.h"
 
-#include <windows.h>
-#include <tchar.h>
-#include <strsafe.h>
-#include "atlstr.h"
-
-#define STRLEN(x) (sizeof(x)/sizeof(TCHAR) - 1)
-
 using namespace System;
 
-DWORD WINAPI calculationFunction(LPVOID lpParam);
+DWORD WINAPI workerFunction(LPVOID lpParam);
 
 ThreadPoolExecutor::ThreadPoolExecutor(int threadsCount)
 {
 	this->threadsCount = threadsCount;
-	dwThreadIdArray = new DWORD[threadsCount];
+	this->newThreadIndex = 0;
 	hThreadArray = new HANDLE[threadsCount];
 }
 
-void ThreadPoolExecutor::scheduleTask(PArrayTask task)
+void ThreadPoolExecutor::scheduleTask(Runnable *runnable)
 {
-	hThreadArray[task->index] = CreateThread(
-		NULL,                             // default security attributes
-		0,                                // use default stack size
-		calculationFunction,              // thread function name
-		task,                             // argument to thread function
-		0,                                // use default creation flags
-		&dwThreadIdArray[task->index]);   // returns the thread identifier
+	if (newThreadIndex >= threadsCount)
+	{
+		throw ExecutionFailedException();
+	}
 
-	if (hThreadArray[task->index] == NULL)
+	hThreadArray[newThreadIndex] = CreateThread(
+		NULL,                                  // default security attributes
+		0,                                     // use default stack size
+		workerFunction,                        // thread function name
+		runnable,                              // argument to thread function
+		0,                                     // use default creation flags
+		0);                                    // returns the thread identifier
+
+	if (hThreadArray[newThreadIndex] == NULL)
 	{
 		ExitProcess(3);
 	}
+	newThreadIndex++;
 }
 
 void ThreadPoolExecutor::waitForAll()
 {
 	WaitForMultipleObjects(threadsCount, hThreadArray, TRUE, INFINITE);
+}
+
+DWORD WINAPI workerFunction(LPVOID lpParam)
+{
+	Runnable *runnable = (Runnable*) lpParam;
+	return runnable->run();
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor()
@@ -47,32 +52,5 @@ ThreadPoolExecutor::~ThreadPoolExecutor()
 		CloseHandle(hThreadArray[i]);
 	}
 
-	delete[] dwThreadIdArray;
 	delete[] hThreadArray;
-}
-
-DWORD WINAPI calculationFunction(LPVOID lpParam)
-{
-	PArrayTask task = (PArrayTask) lpParam;
-	task->arrays->calculate(task->index);
-
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	if (hStdout == INVALID_HANDLE_VALUE)
-	{
-		return 1;
-	}
-
-	char preparedMessage[] = "Thread with index=%d finished\n";
-	char messageChar[30];
-	sprintf(messageChar, preparedMessage, task->index);
-
-	TCHAR message[30];
-	_tcscpy(message, CA2W(messageChar));
-
-	DWORD dwCount = 0;
-	//TCHAR message[] = L"Thread with index=%d finished\n";
-
-	WriteConsole(hStdout, &message, STRLEN(message), &dwCount, NULL);
-	delete(task);
-	return 0;
 }

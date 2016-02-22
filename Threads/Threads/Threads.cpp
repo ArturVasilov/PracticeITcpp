@@ -1,53 +1,129 @@
-// Threads.cpp: главный файл проекта.
-
 #include "stdafx.h"
 
-#include "ThreadPoolExecutor.h"
-#include "Arrays.h"
+#include "PolynomsRunnable.h"
+#include "MergeRunnable.h"
 
-#include <windows.h>
-#include <tchar.h>
-#include <strsafe.h>
+#include "time.h"
 
-int main(array<System::String ^> ^args)
+#include <iostream>
+
+using namespace std;
+
+void multiplyPolynoms(int first, int second);
+
+void mergeArrays(int first, int second);
+
+BOOL setConsoleFontSize(int size);
+
+int main()
 {
-	int first = 3; 
-	int second = 4; 
+	srand(time(0));
+
+	//setConsoleFontSize(32);
+
+	int first;
+	int second;
 	
-	int *firstArray = new int[first];
-	int *secondArray = new int[second];
-	#pragma region fill first array
-	firstArray[0] = 1;
-	firstArray[1] = 2;
-	firstArray[2] = 3; // 3x^2 + 2x + 1
-	#pragma endregion
+	cout << "Please, enter two numbers, that represents your arrays length" << endl;
+	cin >> first;
+	cin >> second;
 
-	#pragma region fill second array
-	secondArray[0] = 4;
-	secondArray[1] = 3;
-	secondArray[2] = 2;
-	secondArray[3] = 1; // x^3 + 2x^2 + 3x + 4
-	#pragma endregion
+	cout << "Thank you for your response. Please, select program you want to execute:" << endl;
+	cout << "1 - create and multiply polynoms" << endl;
+	cout << "2 - create and merge arrays" << endl;
+	cout << "Any different number - exit" << endl;
 
-	int resultSize = first + second - 1; // (n + 1) + (m + 1) - 1
-	Arrays *arrays = new Arrays(firstArray, first, secondArray, second);
-	arrays->prepareResultArray();
+	int program;
+	cin >> program;
 
-	ThreadPoolExecutor *executor = new ThreadPoolExecutor(resultSize);
-	for (int index = 0; index < resultSize; index++)
+	if (program == 1)
 	{
-		ArrayTask *task = new ArrayTask(arrays, index);
-		executor->scheduleTask(task);
+		multiplyPolynoms(first, second);
+	} 
+	else if (program == 2)
+	{
+		mergeArrays(first, second);
 	}
-
-	executor->waitForAll();
-
-	arrays->printResultArray();
-
-	delete(executor);
-	delete(arrays);
+	else
+	{
+		return 0;
+	}
 
 	system("pause");
 
 	return 0;
+}
+
+void multiplyPolynoms(int first, int second)
+{
+	Polynoms *polynoms = new Polynoms(first, second);
+	cout << "Generating arrays..." << endl;
+	polynoms->generateDistinct();
+	polynoms->printArrays();
+
+	cout << "Calculating sequentially..." << endl;
+	polynoms->multiply();
+	polynoms->printResultArray();
+
+	cout << "Calculating in parallel..." << endl;
+	polynoms->clearResultArray();
+
+	int size = first + second - 1;
+	ThreadPoolExecutor *executor = new ThreadPoolExecutor(size);
+	for (int i = 0; i < size; i++)
+	{
+		PolynomsRunnable *runnable = new PolynomsRunnable(polynoms, i);
+		executor->scheduleTask((Runnable*) runnable);
+	}
+
+	executor->waitForAll();
+	
+	polynoms->printResultArray();
+
+	delete(executor);
+	delete(polynoms);
+}
+
+void mergeArrays(int first, int second)
+{
+	Merge *merge = new Merge(first, second);
+	cout << "Generating arrays..." << endl;
+	merge->generateAllDistinctSorted();
+	merge->printArrays();
+
+	cout << "Merging sequentially..." << endl;
+	merge->merge();
+	merge->printResultArray();
+
+	cout << "Parallel binary merging..." << endl;
+	merge->clearResultArray();
+	
+	ThreadPoolExecutor *executor = new ThreadPoolExecutor(first + second);
+	for (int i = 0; i < first; i++)
+	{
+		MergeRunnable *runnable = new MergeRunnable(merge, 0, i);
+		executor->scheduleTask((Runnable*)runnable);
+	}
+	for (int j = 0; j < second; j++)
+	{
+		MergeRunnable *runnable = new MergeRunnable(merge, 1, j);
+		executor->scheduleTask((Runnable*)runnable);
+	}
+
+	executor->waitForAll();
+
+	merge->printResultArray();
+
+	delete(executor);
+	delete(merge);
+}
+
+BOOL setConsoleFontSize(int size) {
+	HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+	CONSOLE_FONT_INFOEX info{ sizeof(CONSOLE_FONT_INFOEX) };
+	if (!GetCurrentConsoleFontEx(output, false, &info))
+		return false;
+	info.dwFontSize.Y = size;
+	info.dwFontSize.X = (int) (size / 1.5);
+	return SetCurrentConsoleFontEx(output, false, &info);
 }

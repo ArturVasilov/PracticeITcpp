@@ -39,7 +39,7 @@ int main()
 	int* numbers = new int[n];
 	for (int i = 0; i < n; i++)
 	{
-		numbers[i] = rand() % 1000 + 1;
+		numbers[i] = rand() % 100 + 1;
 	}
 	cout << "Generated array: ";
 	printArray(numbers, n);
@@ -54,18 +54,14 @@ int main()
 	int end = n;
 	while (end > 1)
 	{
-		int threadsCount = end % 2 == 0 ? (end / 2) : (end / 2) + 1;
+		int threadsCount = end / 2;
 		HANDLE *hThreadArray = new HANDLE[threadsCount];
 		for (int i = 0; i < threadsCount; i++)
 		{
 			ArraySum* sum = new ArraySum();
 			sum->numbers = numbers;
 			sum->firstIndex = i;
-			sum->secondIndex = threadsCount + i;
-			if (sum->secondIndex >= end)
-			{
-				sum->secondIndex = -1;
-			}
+			sum->secondIndex = threadsCount + i + (end % 2);
 
 			hThreadArray[i] = CreateThread(NULL, 
 				0,
@@ -82,8 +78,8 @@ int main()
 		}
 		delete[] hThreadArray;
 
-		printArray(numbers, n);
-		end = threadsCount;
+		printArray(numbers, end);
+		end = threadsCount + (end % 2);
 	}
 
 	cout << "Parallel calculated sum s=" << numbers[0] << endl;
@@ -97,10 +93,7 @@ int main()
 DWORD WINAPI workerFunction(LPVOID lpParam)
 {
 	ArraySum* sum = (ArraySum*)lpParam;
-	if (sum->secondIndex >= 0) 
-	{
-		sum->numbers[sum->firstIndex] += sum->numbers[sum->secondIndex];
-	}
+	sum->numbers[sum->firstIndex] += sum->numbers[sum->secondIndex];
 	return 0;
 }
 

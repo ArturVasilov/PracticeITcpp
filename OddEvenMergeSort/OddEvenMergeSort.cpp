@@ -172,19 +172,3 @@ BOOL setConsoleFontSize(int size) {
 	info.dwFontSize.X = (int)(size / 1.5);
 	return SetCurrentConsoleFontEx(output, false, &info);
 }
-
-
-
-/*
-
-
-void bucketSort(int* a, int n)
-{
-SYSTEM_INFO sysInfo;
-GetSystemInfo(&sysInfo);
-int p = sysInfo.dwNumberOfProcessors;
-
-}
-
-
-*/

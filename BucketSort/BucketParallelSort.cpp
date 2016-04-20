@@ -18,6 +18,7 @@ using namespace std;
 struct ThreadMergeSortData
 {
 	int* numbers;
+	int* buffer;
 	int firstSize;
 	int secondSize;
 };
@@ -25,19 +26,21 @@ struct ThreadMergeSortData
 struct ThreadMergeData
 {
 	int* firstNumbers;
+	int* firstBuffer;
 	int firstSize;
 
 	int* secondNumbers;
+	int* secondBuffer;
 	int secondSize;
 };
 
-void bucketSort(int* numbers, int size);
+void blockSort(int* numbers, int size);
 
 DWORD WINAPI mergeSortThreadFunction(LPVOID lpParam);
 
 DWORD WINAPI mergeThreadFunction(LPVOID lpParam);
 
-void iteratedMergeSort(int* numbers, int size);
+void iteratedMergeSort(int* numbers, int* buffer, int size);
 
 int processorsCount();
 
@@ -47,7 +50,7 @@ BOOL setConsoleFontSize(int size);
 
 int main()
 {
-	setConsoleFontSize(32);
+	//setConsoleFontSize(32);
 
 	int size;
 	cout << "Please, enter length of the array" << endl;
@@ -63,7 +66,7 @@ int main()
 	cout << "Generated array: ";
 	printArray(numbers, size);
 
-	bucketSort(numbers, size);
+	blockSort(numbers, size);
 	cout << "Sorted array: ";
 	printArray(numbers, size);
 
@@ -73,7 +76,7 @@ int main()
 	return 0;
 }
 
-void bucketSort(int* numbers, int size)
+void blockSort(int* numbers, int size)
 {
 	int p = processorsCount();
 	int blocks = p * 2;
@@ -93,21 +96,23 @@ void bucketSort(int* numbers, int size)
 	HANDLE* hThreadArray = new HANDLE[p];
 	ThreadMergeSortData* mergeSortDataArray = new ThreadMergeSortData[p];
 
+	int* buffer = new int[size];
 	int index = 0;
-	for (index = 0; index < blocks / 2; index++)
+	for (index = 0; index < blocks / 2 + blocks % 2; index++)
 	{
 		mergeSortDataArray[index].numbers = numbers + index * blockSize * 2;
-		mergeSortDataArray[index].firstSize = blockSize;
-		mergeSortDataArray[index].secondSize = (index == p - 1 && blocks % 2 == 0) ? lastBlockSize : blockSize;
+		if (blocks % 2 == 1 && index == blocks / 2)
+		{
+			mergeSortDataArray[index].firstSize = lastBlockSize;
+			mergeSortDataArray[index].secondSize = 0;
+		} 
+		else
+		{
+			mergeSortDataArray[index].firstSize = blockSize;
+			mergeSortDataArray[index].secondSize = (index == blocks / 2 + blocks % 2 - 1) ? lastBlockSize : blockSize;
+		}
+		mergeSortDataArray[index].buffer = buffer + index * blockSize * 2;
 		hThreadArray[index] = CreateThread(0, 0, mergeSortThreadFunction, mergeSortDataArray + index, 0, 0);
-	}
-	if (blocks % 2 == 1)
-	{
-		mergeSortDataArray[index].numbers = numbers + index * blockSize * 2;
-		mergeSortDataArray[index].firstSize = lastBlockSize;
-		mergeSortDataArray[index].secondSize = 0;
-		hThreadArray[index] = CreateThread(0, 0, mergeSortThreadFunction, mergeSortDataArray + index, 0, 0);
-		index++;
 	}
 
 	WaitForMultipleObjects(index, hThreadArray, TRUE, INFINITE);
@@ -117,6 +122,7 @@ void bucketSort(int* numbers, int size)
 	}
 	delete[] mergeSortDataArray;
 
+	int* numbersTemp = numbers;
 
 	ThreadMergeData* mergeDataArray = new ThreadMergeData[p];
 	for (int phase = 1; phase < blocks; phase *= 2)
@@ -124,33 +130,32 @@ void bucketSort(int* numbers, int size)
 		for (int comparatorSize = phase; comparatorSize > 0; comparatorSize /= 2)
 		{
 			int index = 0;
-			for (int startIndexInBlock = comparatorSize % phase;
-				startIndexInBlock + comparatorSize < blocks;
-				startIndexInBlock += comparatorSize * 2)
+			//sib ~ start index in each cascade
+			for (int sib = comparatorSize % phase; sib + comparatorSize < blocks; sib += comparatorSize * 2)
 			{
-				for (int comparatorInBlockIndex = 0;
-					comparatorInBlockIndex < comparatorSize && (startIndexInBlock + comparatorInBlockIndex + comparatorSize) < blocks;
-					comparatorInBlockIndex++)
+				if (sib / (phase * 2) != (sib + comparatorSize) / (phase * 2))
 				{
-					int firstIndexBlock = (startIndexInBlock + comparatorInBlockIndex) / (phase * 2);
-					int secondIndexBlock = (startIndexInBlock + comparatorInBlockIndex + comparatorSize) / (phase * 2);
-					//compare only items from the same block
-					if (firstIndexBlock == secondIndexBlock)
+					//comparators are in different cascades
+					continue;
+				}
+				//cbi ~ index for compartor in cascade
+				for (int cbi = 0; cbi < comparatorSize && (sib + cbi + comparatorSize) < blocks; cbi++)
+				{
+					mergeDataArray[index].firstNumbers = numbersTemp + (sib + cbi) * blockSize;
+					mergeDataArray[index].firstBuffer = buffer + (sib + cbi) * blockSize;
+					mergeDataArray[index].firstSize = blockSize;
+					mergeDataArray[index].secondNumbers = mergeDataArray[index].firstNumbers + comparatorSize * blockSize;
+					mergeDataArray[index].secondBuffer = mergeDataArray[index].firstBuffer + comparatorSize * blockSize;
+					if (lastBlockSize != 0 && ((sib + cbi + comparatorSize + 1) * blockSize) > size)
 					{
-						mergeDataArray[index].firstNumbers = numbers + (startIndexInBlock + comparatorInBlockIndex) * blockSize;
-						mergeDataArray[index].firstSize = blockSize;
-						mergeDataArray[index].secondNumbers = mergeDataArray[index].firstNumbers + comparatorSize * blockSize;
-						if (lastBlockSize != 0 && ((startIndexInBlock + comparatorInBlockIndex + comparatorSize + 1) * blockSize) > size)
-						{
-							mergeDataArray[index].secondSize = lastBlockSize;
-						}
-						else
-						{
-							mergeDataArray[index].secondSize = blockSize;
-						}
-						hThreadArray[index] = CreateThread(0, 0, mergeThreadFunction, mergeDataArray + index, 0, 0);
-						index++;
+						mergeDataArray[index].secondSize = lastBlockSize;
 					}
+					else
+					{
+						mergeDataArray[index].secondSize = blockSize;
+					}
+					hThreadArray[index] = CreateThread(0, 0, mergeThreadFunction, mergeDataArray + index, 0, 0);
+					index++;
 				}
 			}
 
@@ -159,17 +164,43 @@ void bucketSort(int* numbers, int size)
 			{
 				CloseHandle(hThreadArray[i]);
 			}
+
+			for (int i = 0; i < size; i++)
+			{
+				numbersTemp[i] = buffer[i];
+			}
+			/* 
+			//This doesn't work, but looks pretty correct.
+			//I don't think that it should. 
+			//Since not all items are changing in each step - may be we're loosing something
+			int* temp = numbersTemp;
+			numbersTemp = buffer;
+			buffer = temp;
+			//*/
 		}
 	}
 
+	if (numbersTemp != numbers)
+	{
+		for (int i = 0; i < size; i++)
+		{
+			numbers[i] = numbersTemp[i];
+		}
+		delete[] numbersTemp;
+	} 
+	else
+	{
+		delete[] buffer;
+	}
+	delete[] mergeDataArray;
 	delete[] hThreadArray;
 }
 
 DWORD WINAPI mergeSortThreadFunction(LPVOID lpParam)
 {
 	ThreadMergeSortData* data = (ThreadMergeSortData*)lpParam;
-	iteratedMergeSort(data->numbers, data->firstSize);
-	iteratedMergeSort(data->numbers + data->firstSize, data->secondSize);
+	iteratedMergeSort(data->numbers, data->buffer, data->firstSize);
+	iteratedMergeSort(data->numbers + data->firstSize, data->buffer + data->firstSize, data->secondSize);
 	return 0;
 }
 
@@ -177,43 +208,51 @@ DWORD WINAPI mergeThreadFunction(LPVOID lpParam)
 {
 	ThreadMergeData* data = (ThreadMergeData*)lpParam;
 	int* firstNumbers = data->firstNumbers;
+	int* firstBuffer = data->firstBuffer;
 	int firstSize = data->firstSize;
 
 	int* secondNumbers = data->secondNumbers;
+	int* secondBuffer = data->secondBuffer;
 	int secondSize = data->secondSize;
 
-	int size = firstSize + secondSize;
-	int* buffer = new int[size];
 
-	for (int i = 0, j = 0, k = 0; k < size; k++)
+	//buffer for smallest values
+	for (int i = 0, j = 0, k = 0; k < firstSize; k++)
 	{
-		if ((i >= firstSize && j < secondSize) || (j < secondSize && firstNumbers[i] > secondNumbers[j]))
+		if (j >= secondSize || firstNumbers[i] < secondNumbers[j])
 		{
-			buffer[k] = secondNumbers[j];
-			j++;
-		}
-		else if ((i < firstSize && j >= secondSize) || (i < firstSize && firstNumbers[i] <= secondNumbers[j]))
-		{
-			buffer[k] = firstNumbers[i];
+			firstBuffer[k] = firstNumbers[i];
 			i++;
 		}
+		else
+		{
+			firstBuffer[k] = secondNumbers[j];
+			j++;
+		}
 	}
 
-	for (int i = 0; i < firstSize; i++)
+	//buffer for largest values
+	for (int i = firstSize - 1, j = secondSize - 1, k = secondSize - 1; k >= 0; k--)
 	{
-		firstNumbers[i] = buffer[i];
-	}
-	for (int i = 0; i < secondSize; i++)
-	{
-		secondNumbers[i] = buffer[firstSize + i];
+		if (i < 0 || secondNumbers[j] > firstNumbers[i])
+		{
+			secondBuffer[k] = secondNumbers[j];
+			j--;
+		}
+		else
+		{
+			secondBuffer[k] = firstNumbers[i];
+			i--;
+		}
 	}
 
 	return 0;
 }
 
-void iteratedMergeSort(int* numbers, int n)
+void iteratedMergeSort(int* numbers, int* buffer, int n)
 {
-	int* buffer = new int[n];
+	int* first = numbers;
+	int* second = buffer;
 
 	for (int sortedSize = 1; sortedSize < n; sortedSize *= 2)
 	{
@@ -223,36 +262,34 @@ void iteratedMergeSort(int* numbers, int n)
 			int end = middle + sortedSize;
 			end = end >= n ? (n - 1) : end;
 
-			for (int i = start; i <= end; i++)
-			{
-				buffer[i] = numbers[i];
-			}
-
 			for (int i = start, j = middle + 1, k = start; k <= end; k++)
 			{
-				if ((i > middle && j <= end) || (j <= end && buffer[i] > buffer[j]))
+				if ((i > middle && j <= end) || (j <= end && first[i] > first[j]))
 				{
-					numbers[k] = buffer[j];
+					second[k] = first[j];
 					j++;
 				}
-				else if ((i <= middle && j > end) || (i <= middle && buffer[i] <= buffer[j]))
+				else if ((i <= middle && j > end) || (i <= middle && first[i] <= first[j]))
 				{
-					numbers[k] = buffer[i];
+					second[k] = first[i];
 					i++;
 				}
 			}
 		}
+
+		int* temp = first;
+		first = second;
+		second = temp;
 	}
 
-	delete[] buffer;
-}
+	if (numbers != first)
+	{
+		for (int i = 0; i < n; i++)
+		{
+			numbers[i] = first[i];
+		}
+	}
 
-int processorsCount()
-{
-	//8 for my machine
-	SYSTEM_INFO sysinfo;
-	GetSystemInfo(&sysinfo);
-	return sysinfo.dwNumberOfProcessors;
 }
 
 void printArray(int* numbers, int length)
@@ -265,6 +302,14 @@ void printArray(int* numbers, int length)
 	cout << numbers[length - 1] << "]" << endl;
 }
 
+int processorsCount()
+{
+	//8 for my machine
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	return sysinfo.dwNumberOfProcessors;
+}
+
 BOOL setConsoleFontSize(int size) {
 	HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_FONT_INFOEX info{ sizeof(CONSOLE_FONT_INFOEX) };
@@ -273,4 +318,4 @@ BOOL setConsoleFontSize(int size) {
 	info.dwFontSize.Y = size;
 	info.dwFontSize.X = (int)(size / 1.5);
 	return SetCurrentConsoleFontEx(output, false, &info);
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+}        

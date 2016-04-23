@@ -72,7 +72,6 @@ int main()
 
 	delete[] numbers;
 
-	system("pause");
 	return 0;
 }
 
@@ -122,8 +121,6 @@ void blockSort(int* numbers, int size)
 	}
 	delete[] mergeSortDataArray;
 
-	int* numbersTemp = numbers;
-
 	ThreadMergeData* mergeDataArray = new ThreadMergeData[p];
 	for (int phase = 1; phase < blocks; phase *= 2)
 	{
@@ -141,7 +138,7 @@ void blockSort(int* numbers, int size)
 				//cbi ~ index for compartor in cascade
 				for (int cbi = 0; cbi < comparatorSize && (sib + cbi + comparatorSize) < blocks; cbi++)
 				{
-					mergeDataArray[index].firstNumbers = numbersTemp + (sib + cbi) * blockSize;
+					mergeDataArray[index].firstNumbers = numbers + (sib + cbi) * blockSize;
 					mergeDataArray[index].firstBuffer = buffer + (sib + cbi) * blockSize;
 					mergeDataArray[index].firstSize = blockSize;
 					mergeDataArray[index].secondNumbers = mergeDataArray[index].firstNumbers + comparatorSize * blockSize;
@@ -165,33 +162,18 @@ void blockSort(int* numbers, int size)
 				CloseHandle(hThreadArray[i]);
 			}
 
-			for (int i = 0; i < size; i++)
-			{
-				numbersTemp[i] = buffer[i];
-			}
 			/* 
 			//This doesn't work, but looks pretty correct.
 			//I don't think that it should. 
 			//Since not all items are changing in each step - may be we're loosing something
-			int* temp = numbersTemp;
-			numbersTemp = buffer;
+			int* temp = numbers;
+			numbers = buffer;
 			buffer = temp;
 			//*/
 		}
 	}
 
-	if (numbersTemp != numbers)
-	{
-		for (int i = 0; i < size; i++)
-		{
-			numbers[i] = numbersTemp[i];
-		}
-		delete[] numbersTemp;
-	} 
-	else
-	{
-		delete[] buffer;
-	}
+	delete[] buffer;
 	delete[] mergeDataArray;
 	delete[] hThreadArray;
 }
@@ -244,6 +226,15 @@ DWORD WINAPI mergeThreadFunction(LPVOID lpParam)
 			secondBuffer[k] = firstNumbers[i];
 			i--;
 		}
+	}
+
+	for (int i = 0; i < firstSize; i++)
+	{
+		firstNumbers[i] = firstBuffer[i];
+	}
+	for (int i = 0; i < secondSize; i++)
+	{
+		secondNumbers[i] = secondBuffer[i];
 	}
 
 	return 0;

@@ -18,13 +18,8 @@ BOOL setConsoleFontSize(int size);
 
 DWORD WINAPI PhilosopherFunction(LPVOID lpParam);
 
-struct PhilosopherData
-{
-	int index;
-	int leftIndex;
-	int rightIndex;
-	int repeat;
-};
+int n;
+int repeat;
 
 HANDLE semaphore;
 HANDLE* hMutexArray;
@@ -33,12 +28,10 @@ int main()
 {
 	setConsoleFontSize(32);
 	cout << "Please, enter philosophers count:" << endl;
-	int n;
 	cin >> n;
 
 	cout << "Please, enter repeat count:" << endl;
-	int m;
-	cin >> m;
+	cin >> repeat;
 
 	srand(time(0));
 
@@ -51,18 +44,12 @@ int main()
 	semaphore = CreateSemaphore(NULL, n - 1, n - 1, NULL);        
 
 	HANDLE *hThreadArray = new HANDLE[n];
-	PhilosopherData* dataArray = new PhilosopherData[n];
 	for (int i = 0; i < n; i++)
 	{
-		dataArray[i].index = i;
-		dataArray[i].leftIndex = i;
-		dataArray[i].rightIndex = (i == n - 1) ? 0 : i + 1;
-		dataArray[i].repeat = m;
-
 		hThreadArray[i] = CreateThread(NULL,
 			0,
 			PhilosopherFunction,
-			dataArray + i,
+			(LPVOID)i,
 			0,
 			0);
 	}
@@ -74,7 +61,6 @@ int main()
 		CloseHandle(hThreadArray[i]);
 	}
 	delete[] hThreadArray;
-	delete[] dataArray;
 
 	for (int i = 0; i < n; i++)
 	{
@@ -83,19 +69,15 @@ int main()
 	delete[] hMutexArray;
 
 	CloseHandle(semaphore);
-	
-	system("pause");
 
     return 0;
 }
 
 DWORD WINAPI PhilosopherFunction(LPVOID lpParam)
 {
-	PhilosopherData* data = (PhilosopherData*)lpParam;
-	int index = data->index;
-	int leftIndex = data->leftIndex;
-	int rightIndex = data->rightIndex;
-	int repeat = data->repeat;
+	int index = (int) lpParam;
+	int leftIndex = index;
+	int rightIndex = index == n - 1 ? 0 : n - 1;
 
 	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	TCHAR msgBuf[BUF_SIZE];

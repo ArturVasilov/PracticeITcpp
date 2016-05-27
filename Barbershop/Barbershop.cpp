@@ -12,7 +12,6 @@
 
 #define BUF_SIZE 255
 #define ERROR -1
-#define BARBERS_WAITING_TIME_BEFORE_GO_HOME 10000
 
 using namespace System;
 using namespace std;
@@ -32,7 +31,7 @@ public:
 
 	int get()
 	{
-		DWORD dwResult = WaitForSingleObject(mutex, INFINITE);
+		WaitForSingleObject(mutex, INFINITE);
 		int result = ERROR;
 		if (!numbers.empty())
 		{
@@ -66,15 +65,14 @@ DWORD WINAPI ClientFunction(LPVOID lpParam);
 
 int repeat;
 
-SyncronizedIntQueue waitingQueue; //table in waiting room (for clients in seats)
+SyncronizedIntQueue waitingQueue; //table in waiting room
 SyncronizedIntQueue workingQueue; //table in barbes room
 
 HANDLE barbersSemaphore; //semaphore for free barbers 
 HANDLE readyClientsSemaphore; //semaphore for clients which are waiting for barber
 
-//pair of semaphore for each barber place (for messaging)
-HANDLE* clientsSeatsSemaphores; 
-HANDLE* barbersSeatsSemaphores;
+HANDLE* clientsSeatsSemaphores; //wait haircut finished for each seat
+HANDLE haircutFinishedSemaphore; //semaphore to leave the seat
 
 int main()
 {
@@ -107,12 +105,11 @@ int main()
 	readyClientsSemaphore = CreateSemaphore(NULL, 0, barbers, NULL); 
 
 	clientsSeatsSemaphores = new HANDLE[capacity]; //since there are capacity of numbers
-	barbersSeatsSemaphores = new HANDLE[capacity];
 	for (int i = 0; i < capacity; i++)
 	{
 		clientsSeatsSemaphores[i] = CreateSemaphore(NULL, 0, 1, NULL);
-		barbersSeatsSemaphores[i] = CreateSemaphore(NULL, 1, 1, NULL);
 	}
+	haircutFinishedSemaphore = CreateSemaphore(NULL, 0, barbers, NULL);
 
 	HANDLE *clientsThreads = new HANDLE[clients];
 	for (int i = 0; i < clients; i++)
@@ -137,26 +134,80 @@ int main()
 	}
 
 	WaitForMultipleObjects(clients, clientsThreads, TRUE, INFINITE);
-	WaitForMultipleObjects(barbers, barbersThreads, TRUE, INFINITE);
 
 	for (int i = 0; i < clients; i++)
 	{
 		CloseHandle(clientsThreads[i]);
 	}
-	for (int i = 0; i < barbers; i++)
-	{
-		CloseHandle(barbersThreads[i]);
-	}
 	for (int i = 0; i < capacity; i++)
 	{
 		CloseHandle(clientsSeatsSemaphores[i]);
-		CloseHandle(barbersSeatsSemaphores[i]);
 	}
+	CloseHandle(haircutFinishedSemaphore);
+
 	delete[] clientsThreads;
 	delete[] barbersThreads;
 	delete[] clientsSeatsSemaphores;
-	delete[] barbersSeatsSemaphores;
 
+	return 0;
+}
+
+DWORD WINAPI ClientFunction(LPVOID lpParam)
+{
+	int index = (int)lpParam;
+	srand(100000 + index);
+
+	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	TCHAR msgBuf[BUF_SIZE];
+	size_t cchStringSize;
+	DWORD dwChars;
+
+	int i = 0;
+	while (i < repeat)
+	{
+		int number = waitingQueue.get(); //waiting for number (step 1)
+		if (number == ERROR) //queue is empty
+		{
+			StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Свободных мест нет. Клиент %d уходит из парикмахерской.\n"), index);
+			StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
+			WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
+
+			int seconds = rand() % 5 + 1;
+			Sleep(seconds * 1000);
+		}
+		else
+		{
+			//client now has his number and he can either go to barber's seat or to wait for barber
+			StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d зашел в парикмахерскую и взял номерок %d.\n"), index, number);
+			StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
+			WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
+
+			WaitForSingleObject(barbersSemaphore, INFINITE); //waiting for the barber (step 2)
+			workingQueue.put(number); //put number to the table in barbers room (step 3)
+
+			StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d садится в кресло парикмахера.\n"), index, number);
+			StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
+			WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
+
+			//client is no more waiting for the barber
+			ReleaseSemaphore(readyClientsSemaphore, 1, NULL);
+
+			//wait until barber finishes his work (step 4)
+			WaitForSingleObject(clientsSeatsSemaphores[number], INFINITE);
+
+			StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d постригся и уходит из парикмахерской.\n"), index, number);
+			StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
+			WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
+
+			//finished, release seat and notify barber (step 5)
+			ReleaseSemaphore(haircutFinishedSemaphore, 1, NULL); 
+
+			int seconds = rand() % 5 + 1;
+			Sleep(seconds * 1000);
+
+			i++;
+		}
+	}
 	return 0;
 }
 
@@ -172,83 +223,32 @@ DWORD WINAPI BarberFunction(LPVOID lpParam)
 
 	while (true)
 	{
-		DWORD result = WaitForSingleObject(readyClientsSemaphore, BARBERS_WAITING_TIME_BEFORE_GO_HOME);
-		if (result != WAIT_OBJECT_0)
-		{
-			return 0; //unless that the program will never end and we simply can't release resources in main function
-		}
-		int number = workingQueue.get();
-		WaitForSingleObject(barbersSeatsSemaphores[number], INFINITE); //lock this seat unless barber finishes his work
-
-		int seconds = rand() % 3 + 1;
-		Sleep(seconds * 1000);
+		//waiting for the client (step 1)
+		WaitForSingleObject(readyClientsSemaphore, INFINITE);
+		
+		int number = workingQueue.get(); //take client number (step 2)
 
 		StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Парикмахер %d стрижет клиента с номерком %d.\n"), index, number);
 		StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
 		WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
-		ReleaseSemaphore(clientsSeatsSemaphores[number], 1, NULL); //let client go
 
-		waitingQueue.put(number); //put number back to the table in waiting room
+		int seconds = rand() % 3 + 1;
+		Sleep(seconds * 1000);
+		//haircut is finished, client should leave the seat (step 3)
+		ReleaseSemaphore(clientsSeatsSemaphores[number], 1, NULL);
 
-		ReleaseSemaphore(barbersSemaphore, 1, NULL); //tell that the barber is free now
+		//wait until client leaves its' seat to be ready for next client (step 4)
+		WaitForSingleObject(haircutFinishedSemaphore, INFINITE); 
+
+		waitingQueue.put(number); //put number back to the table in waiting room (step 5)
 
 		StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Парикмахер %d готов принять следующего клиента.\n"), index);
 		StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
 		WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
+
+		ReleaseSemaphore(barbersSemaphore, 1, NULL); //tell that the barber is free now
 	}
 
-	return 0;
-}
-
-DWORD WINAPI ClientFunction(LPVOID lpParam)
-{
-	int index = (int)lpParam;
-	srand(1000 + index);
-
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	TCHAR msgBuf[BUF_SIZE];
-	size_t cchStringSize;
-	DWORD dwChars;
-
-	for (int i = 0; i < repeat; i++)
-	{
-		int number = waitingQueue.get();
-		while (number == ERROR) //empty queue
-		{
-			number = waitingQueue.get();
-			StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Свободных мест нет. Клиент %d уходит из парикмахерской.\n"), index);
-			StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
-			WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
-
-			int seconds = rand() % 5 + 1;
-			Sleep(seconds * 1000);
-		}
-
-		//client now has his number and he can either go to barber's seat or to wait for barber
-		StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d зашел в парикмахерскую и взял номерок %d.\n"), index, number);
-		StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
-		WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
-
-		WaitForSingleObject(barbersSemaphore, INFINITE); //waiting for the barber
-		workingQueue.put(number); //put number to the table in barbers room
-
-		ReleaseSemaphore(readyClientsSemaphore, 1, NULL); //client is no more waiting for the barber
-
-		StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d садится в кресло парикмахера.\n"), index, number);
-		StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
-		WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
-
-		WaitForSingleObject(clientsSeatsSemaphores[number], INFINITE); //wait until barber finishes his work
-
-		StringCchPrintf(msgBuf, BUF_SIZE, TEXT("Клиент %d постригся и уходит из парикмахерской.\n"), index, number);
-		StringCchLength(msgBuf, BUF_SIZE, &cchStringSize);
-		WriteConsole(hStdout, msgBuf, (DWORD)cchStringSize, &dwChars, NULL);
-
-		ReleaseSemaphore(barbersSeatsSemaphores[number], 1, NULL); //finished, go home
-
-		int seconds = rand() % 5 + 1;
-		Sleep(seconds * 1000);
-	}
 	return 0;
 }
 
